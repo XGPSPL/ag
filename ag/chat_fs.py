@@ -1,0 +1,99 @@
+from pathlib import Path
+
+CHAT_DIR = Path.home() / ".ag" / "chats"
+CURRENT_FILE = Path.home() / ".ag" / "current"
+DEFAULT_INSTRUCTIONS = ("")
+
+def list_chats() -> list[str]:
+    """list sessions (without .md), alphabetic order"""
+    ensure_chat_dir()
+    return sorted(f.stem for f in CHAT_DIR.iterdir() if f.suffix == ".md")
+
+def get_default_chat() -> str | None:
+    """read ~/.ag/current"""
+    try:
+        return CURRENT_FILE.read_text().strip()
+    except FileNotFoundError:
+        return None
+
+def set_default_chat(name: str) -> None:
+    """set default chat"""
+    ensure_chat_dir()
+    if name not in list_chats():
+        raise FileNotFoundError(f"Chat '{name}' doesn't exist")
+    CURRENT_FILE.write_text(name, encoding="utf-8")
+
+def show_chat(name: str) -> str:
+    """
+    print chat to stdout
+    """
+    path = chat_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Chat '{name}' doesn't exist")
+    return path.read_text(encoding="utf-8")
+
+def ensure_chat_dir() -> None:
+    """make sure chat dir exists"""
+    CHAT_DIR.mkdir(parents=True, exist_ok=True)
+
+def chat_path(name: str) -> Path:
+    """return the path of markdown file"""
+    ensure_chat_dir()
+    return CHAT_DIR / f"{name}.md"
+
+def new_chat(name: str, insn: str | None = None) -> None:
+    """
+    create new chat and write in template
+    name: session name
+    insn: instruction
+    """
+    path = chat_path(name)
+    if path.exists():
+        raise FileExistsError(f"Chat '{name}' already exists")
+    inst = insn.strip() if insn else DEFAULT_INSTRUCTIONS
+    content = (
+        f"# Chat: {name}\n\n"
+        "## Instructions:\n"
+        f"{inst}\n\n"
+        "## Conversation\n\n"
+    )
+    path.write_text(content, encoding="utf-8")
+
+def rename_chat(old: str, new: str) -> None:
+    """rename chat"""
+    old_path = chat_path(old)
+    new_path = chat_path(new)
+    if not old_path.exists():
+        raise FileNotFoundError(f"Chat '{old}' doesn't exist")
+    if new_path.exists():
+        raise FileExistsError(f"Chat '{new}' already exists")
+    old_path.rename(new_path)
+
+def delete_chat(name: str) -> None:
+    """delete chat"""
+    path = chat_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Chat '{name}' doesn't exist")
+    path.unlink()
+
+def read_chat(name: str) -> str:
+    """read the entire chat (to send to the model)"""
+    path = chat_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Chat '{name}' doesn't exist")
+    return path.read_text(encoding="utf-8")
+
+def append_user_and_reply(name: str, question: str, reply: str) -> None:
+    """
+    append user's question and AI's reply to the file
+    """
+    path = chat_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Chat '{name}' doesn't exist")
+    with path.open("a", encoding="utf-8") as file:
+        file.write("\n### User\n")
+        file.write(question.strip() + "\n\n")
+        file.write("\n### Assistant\n")
+        file.write("```reply\n")
+        file.write(reply.strip() + "\n")
+        file.write("```\n")

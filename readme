@@ -1,0 +1,33 @@
+ag: AGent everywhere
+
+run:
+  $ python3 -m venv venv
+  $ source venv/bin/activate
+  $ pip install -r requirements.txt
+  $ pip install -e .
+
+env:
+  export API_KEY       = ...
+  export BASE_URL      = ... (default: https://api.openai.com/)
+  export DEFAULT_MODEL = ... (default:gpt-4o)
+
+command:
+  ask   send question to llm
+  cat   print session to stdout
+  edit  edit conversation
+  ls    list all sessions, display '*' before default session
+  mv    rename
+  new   new conversation
+  rm    delete
+  sw    switch default session (fzf)
+
+ask:
+  pipe:   echo "question" | ag ask --stdin [--temp] [--save-as NAME|--no-save]
+  normal: ag ask [NAME] [--stream]
+
+  --stdin         read from stdin, no history
+  --temp          temp session
+  --save-as TEXT  save the chat (temp session)
+  --stream        turn on stream
+
+//:~
