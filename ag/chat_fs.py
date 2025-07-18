@@ -1,8 +1,42 @@
 from pathlib import Path
+import subprocess, time
 
 CHAT_DIR = Path.home() / ".ag" / "chats"
 CURRENT_FILE = Path.home() / ".ag" / "current"
 DEFAULT_INSTRUCTIONS = ("")
+
+def ensure_git_repo() -> None:
+    """init git repo"""
+    git_dir = CHAT_DIR / ".git"
+    if not git_dir.exists():
+        subprocess.run(
+            ["git", "init", str(CHAT_DIR)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+def git_commit(session: str) -> None:
+    """
+    git add ... && git commit
+
+    <session>: Q&A @ YYYY-MM-DD HH:MM:SS
+    """
+    ensure_git_repo()
+    subprocess.run(
+        ["git", "-C", str(CHAT_DIR), "add", "."],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    msg = f"{session}: Q&A @ {ts}"
+    subprocess.run(
+        ["git", "-C", str(CHAT_DIR), "commit", "-m", msg],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 def list_chats() -> list[str]:
     """list sessions (without .md), alphabetic order"""
@@ -82,6 +116,20 @@ def read_chat(name: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Chat '{name}' doesn't exist")
     return path.read_text(encoding="utf-8")
+
+def append_reply(name: str, reply: str) -> None:
+    """
+    append AI's reply to the file
+    """
+    path: Path = chat_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Chat '{name}' doesn't exist")
+
+    with path.open("a", encoding="utf-8") as file:
+        file.write("\n### Assistant\n")
+        file.write("```reply\n")
+        file.write(reply.strip() + "\n")
+        file.write("```\n")
 
 def append_user_and_reply(name: str, question: str, reply: str) -> None:
     """

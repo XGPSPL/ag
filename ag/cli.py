@@ -1,9 +1,8 @@
-import subprocess
-import tempfile, sys, os, shutil
+import subprocess, tempfile, sys, os, shutil, time, locale
 import click
 from .chat_fs import (
-    chat_path, get_default_chat, list_chats, rename_chat, set_default_chat,
-    read_chat, append_user_and_reply, delete_chat, show_chat, new_chat
+    chat_path, get_default_chat, git_commit, list_chats, rename_chat, set_default_chat, append_reply,
+    read_chat, append_user_and_reply, delete_chat, show_chat, new_chat, DEFAULT_INSTRUCTIONS
 )
 from .api_client import send_message, APIError
 
@@ -11,6 +10,77 @@ from .api_client import send_message, APIError
 def cli():
     """ag: agent for everything"""
     pass
+
+@cli.command(name="re", help="repl mode")
+@click.option("--stream", is_flag=True, help="stream")
+def repl(stream: bool) -> None:
+    """
+    repl mode
+    """
+    encoding = locale.getpreferredencoding(False)
+
+    click.secho("Entering REPL mode. Type /exit or Ctrl+D to quit.", fg="blue")
+
+    messages: list[dict[str, str]] = []
+    if DEFAULT_INSTRUCTIONS:
+        messages.append({"role": "system", "content": DEFAULT_INSTRUCTIONS})
+
+    history: list[tuple[str, str]] = []
+
+    while True:
+        click.echo(">>> ", nl=False)
+        try:
+            raw_bytes = sys.stdin.buffer.readline()
+        except KeyboardInterrupt:
+            click.echo()
+            break
+
+        if not raw_bytes:
+            click.echo()
+            break
+
+        q = raw_bytes.decode(encoding, errors="ignore").rstrip("\n")
+        if q.strip() in ("/exit", "/quit"):
+            break
+
+        messages.append({"role": "user", "content": q})
+        click.secho("Processing...", fg="green")
+        try:
+            reply = send_message(messages, stream=stream)
+        except APIError as e:
+            click.secho(f"API Error: {e}", fg="red")
+            messages.pop()
+            continue
+
+        if not stream:
+            click.echo(reply)
+        history.append((q, reply))
+        messages.append({"role": "assistant", "content": reply})
+
+    if not history:
+        click.secho("No messages in this REPL session.", fg="yellow")
+        return
+
+    if not click.confirm("Save this REPL conversation as a new session?", default=False):
+        click.secho("REPL session discarded.", fg="yellow")
+        return
+
+    while True:
+        name = click.prompt("Enter session name", default=f"repl-{int(time.time())}")
+        try:
+            new_chat(name)
+            break
+        except FileExistsError:
+            click.secho(f"Session '{name}' already exists.", fg="red")
+
+    for q, reply in history:
+        append_user_and_reply(name, q, reply)
+
+    click.secho(f"REPL conversation saved to session '{name}'", fg="green")
+    try:
+        git_commit(name)
+    except subprocess.CalledProcessError:
+        click.secho("Git commit failed; please check your Git setup.", fg="yellow")
 
 @cli.command(name="new")
 @click.argument("name")
@@ -20,6 +90,10 @@ def new(name, insn):
     try:
         new_chat(name, insn)
         click.secho(f"New conversation created: '{name}'", fg="green")
+        try:
+            git_commit(name)
+        except subprocess.CalledProcessError:
+            click.secho("Git commit failed; please check your Git setup.", fg="yellow")
     except FileExistsError as e:
         click.secho(f"Error encounted: {e}", fg="red")
         sys.exit(1)
@@ -32,6 +106,10 @@ def rename(old_name, new_name):
     try:
         rename_chat(old_name, new_name)
         click.secho(f"Conversation renamed: {old_name} → {new_name}", fg="green")
+        try:
+            git_commit(new_name)
+        except subprocess.CalledProcessError:
+            click.secho("Git commit failed; please check your Git setup.", fg="yellow")
     except (FileNotFoundError, FileExistsError) as e:
         click.secho(f"Error encounted: {e}", fg="red")
         sys.exit(1)
@@ -43,6 +121,10 @@ def delete(name):
     try:
         delete_chat(name)
         click.secho(f"Deleted conversation: '{name}'", fg="green")
+        try:
+            git_commit(name)
+        except subprocess.CalledProcessError:
+            click.secho("Git commit failed; please check your Git setup.", fg="yellow")
     except FileExistsError as e:
         click.secho(f"Error encounted: {e}", fg="red")
         sys.exit(1)
@@ -104,6 +186,10 @@ def ask(name, use_stdin, is_temp, save_as, stream):
             if save_as:
                 new_chat(save_as)
                 append_user_and_reply(save_as, prompt, reply)
+                try:
+                    git_commit(save_as)
+                except subprocess.CalledProcessError:
+                    click.secho("Git commit failed; please check your Git setup.", fg="yellow")
                 click.secho(f"Saved to session '{save_as}'", fg="green")
                 os.unlink(temp_path)
                 return
@@ -112,7 +198,14 @@ def ask(name, use_stdin, is_temp, save_as, stream):
             os.unlink(temp_path)
             return
     else:
-        append_user_and_reply(name, prompt, reply)
+        if use_stdin:
+            append_user_and_reply(name, prompt, reply)
+        else:
+            append_reply(name, reply)
+        try:
+            git_commit(name)
+        except subprocess.CalledProcessError:
+            click.secho("Git commit failed; please check your Git setup.", fg="yellow")
 
 @cli.command()
 @click.argument("name")
@@ -127,7 +220,7 @@ def edit(name):
     subprocess.call([editor, str(path)])
 
 @cli.command(name="ls")
-def list():
+def ag_list():
     """list all sessions, display '*' before default session"""
     chats = list_chats()
     default = get_default_chat()

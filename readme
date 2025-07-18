@@ -3,8 +3,13 @@ ag: AGent everywhere
 run:
   $ python3 -m venv venv
   $ source venv/bin/activate
-  $ pip install -r requirements.txt
-  $ pip install -e .
+  (venv) $ pip install -r requirements.txt
+  (venv) $ pip install -e .
+  (venv) $ ag
+
+install:
+  $ sudo pipx install .
+  $ ag
 
 env:
   export API_KEY       = ...
@@ -18,8 +23,12 @@ command:
   ls    list all sessions, display '*' before default session
   mv    rename
   new   new conversation
+  re    repl mode
   rm    delete
-  sw    switch default session (fzf)
+  sw    switch default session
+
+repl:
+  ag re [--stream]
 
 ask:
   pipe:   echo "question" | ag ask --stdin [--temp] [--save-as NAME|--no-save]
@@ -29,5 +38,9 @@ ask:
   --temp          temp session
   --save-as TEXT  save the chat (temp session)
   --stream        turn on stream
+
+git:
+  ag will automatically create a repo in ~/.ag/chats/.git
+  you can now track changes easily
 
 //:~
