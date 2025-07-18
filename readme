@@ -8,7 +8,7 @@ run:
   (venv) $ ag
 
 install:
-  $ sudo pipx install .
+  $ pipx install ag .
   $ ag
 
 env:
