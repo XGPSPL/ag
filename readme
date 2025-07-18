@@ -19,7 +19,8 @@ env:
 command:
   ask   send question to llm
   cat   print session to stdout
-  edit  edit conversation
+  ed    edit conversation
+  insn  manage system prompts
   ls    list all sessions, display '*' before default session
   mv    rename
   new   new conversation
@@ -34,13 +35,18 @@ ask:
   pipe:   echo "question" | ag ask --stdin [--temp] [--save-as NAME|--no-save]
   normal: ag ask [NAME] [--stream]
 
-  --stdin         read from stdin, no history
-  --temp          temp session
-  --save-as TEXT  save the chat (temp session)
-  --stream        turn on stream
+  -l, --stdin      read from stdin, no history
+  -t, --temp       temp session
+  --save-as TEXT   save the chat (temp session)
+  -s, --stream     turn on stream
+  -i, --insn TEXT  system prompt or saved prompt name
+
+insn:
+  system prompts are stored in ~/.ag/insn/
+  cat, ed, ls, new, rm, sw
 
 git:
-  ag will automatically create a repo in ~/.ag/chats/.git
+  ag will automatically create a repo in ~/.ag/chats/
   you can now track changes easily
 
 //:~

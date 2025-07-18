@@ -1,8 +1,10 @@
 import subprocess, tempfile, sys, os, shutil, time, locale
 import click
 from .chat_fs import (
-    chat_path, get_default_chat, git_commit, list_chats, rename_chat, set_default_chat, append_reply,
-    read_chat, append_user_and_reply, delete_chat, show_chat, new_chat, DEFAULT_INSTRUCTIONS
+    chat_path, get_default_chat, get_default_insn, git_commit, list_chats,list_insns,
+    rename_chat, set_default_chat, append_reply,read_chat, append_user_and_reply, delete_chat,
+    show_chat, new_chat, DEFAULT_INSTRUCTIONS, list_insns, get_default_insn, new_insn,
+    delete_insn, set_default_insn, read_insn, INSN_DIR
 )
 from .api_client import send_message, APIError
 
@@ -11,9 +13,65 @@ def cli():
     """ag: agent for everything"""
     pass
 
+@cli.group(name="insn", help="manage system prompts")
+def insn(): pass
+
+@insn.command(name="ls")
+def insn_ls():
+    for name in list_insns():
+        prefix = "* " if name == get_default_insn() else "  "
+        click.echo(f"{prefix}{name}")
+
+@insn.command(name="new")
+@click.argument("name")
+@click.option("-f", "--file", "src_file", help="Copy from existing text file")
+def insn_new(name, src_file):
+    try:
+        new_insn(name, src_file)
+        click.secho(f"Prompt '{name}' created.", fg="green")
+    except FileExistsError as e:
+        raise click.ClickException(str(e))
+
+@insn.command(name="ed")
+@click.argument("name")
+def insn_edit(name):
+    path = INSN_DIR / f"{name}.md"
+    if not path.exists():
+        raise click.ClickException(f"Prompt '{name}' not found")
+    editor = os.getenv("EDITOR","vi")
+    subprocess.call([editor, str(path)])
+
+@insn.command(name="rm")
+@click.argument("name")
+def insn_rm(name):
+    try:
+        delete_insn(name)
+        click.secho(f"Prompt '{name}' deleted.", fg="green")
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e))
+
+@insn.command(name="sw")
+@click.argument("name")
+def insn_switch(name):
+    try:
+        set_default_insn(name)
+        click.secho(f"Default prompt set to '{name}'", fg="green")
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e))
+
+@insn.command(name="cat")
+@click.argument("name")
+def insn_show(name):
+    try:
+        text = read_insn(name)
+        click.echo(text)
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e))
+
 @cli.command(name="re", help="repl mode")
-@click.option("--stream", is_flag=True, help="stream")
-def repl(stream: bool) -> None:
+@click.option("-s", "--stream" , is_flag = True          , help="stream")
+@click.option("-i", "--insn"   , "insn" , default = None , help="system prompt or saved prompt name")
+def repl(stream: bool, insn: str | None) -> None:
     """
     repl mode
     """
@@ -22,8 +80,24 @@ def repl(stream: bool) -> None:
     click.secho("Entering REPL mode. Type /exit or Ctrl+D to quit.", fg="blue")
 
     messages: list[dict[str, str]] = []
-    if DEFAULT_INSTRUCTIONS:
-        messages.append({"role": "system", "content": DEFAULT_INSTRUCTIONS})
+    system_content: str | None = None
+    if insn:
+        try:
+            system_content = read_insn(insn)
+        except FileNotFoundError:
+            system_content = insn
+    else:
+        default_name = get_default_insn()
+        if default_name:
+            try:
+                system_content = read_insn(default_name)
+            except FileNotFoundError:
+                system_content = None
+        else:
+            system_content = DEFAULT_INSTRUCTIONS or None
+
+    if system_content:
+        messages.append({"role": "system", "content": system_content})
 
     history: list[tuple[str, str]] = []
 
@@ -131,11 +205,12 @@ def delete(name):
 
 @cli.command()
 @click.argument("name", required=False)
-@click.option("--stdin"  , "use_stdin", is_flag = True, help="read from stdin, no history")
-@click.option("--temp"   , "is_temp"  , is_flag = True, help="temp session")
+@click.option("-l", "--stdin"  , "use_stdin", is_flag = True, help="read from stdin, no history")
+@click.option("-t", "--temp"   , "is_temp"  , is_flag = True, help="temp session")
 @click.option("--save-as", "save_as"  , default = None, help="save the chat (temp session)")
-@click.option("--stream" , "stream"   , is_flag = True, help="turn on stream")
-def ask(name, use_stdin, is_temp, save_as, stream):
+@click.option("-s", "--stream" , "stream"   , is_flag = True, help="turn on stream")
+@click.option("-i", "--insn"   , "insn"     , default = None, help="system prompt or saved prompt name")
+def ask(name, use_stdin, is_temp, save_as, stream, insn):
     """
     send question to llm
 
@@ -165,7 +240,28 @@ def ask(name, use_stdin, is_temp, save_as, stream):
         temp_file.close()
 
     click.secho("Processing...", fg="green")
-    message = [{"role": "user", "content": prompt}]
+    message: list[dict[str,str]] = []
+    system_content: str | None = None
+    if insn:
+        try:
+            system_content = read_insn(insn)
+        except FileNotFoundError:
+            system_content = insn
+    else:
+        default_name = get_default_insn()
+        if default_name:
+            try:
+                system_content = read_insn(default_name)
+            except FileNotFoundError:
+                system_content = None
+        else:
+            system_content = DEFAULT_INSTRUCTIONS or None
+
+    if system_content:
+        message.append({"role": "system", "content": system_content})
+
+    message.append({"role": "user", "content": prompt})
+
     try:
         reply = send_message(message, stream=stream)
     except APIError as e:
@@ -207,7 +303,7 @@ def ask(name, use_stdin, is_temp, save_as, stream):
         except subprocess.CalledProcessError:
             click.secho("Git commit failed; please check your Git setup.", fg="yellow")
 
-@cli.command()
+@cli.command(name="ed")
 @click.argument("name")
 def edit(name):
     """edit conversation"""

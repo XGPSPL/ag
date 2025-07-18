@@ -1,9 +1,53 @@
 from pathlib import Path
 import subprocess, time
 
-CHAT_DIR = Path.home() / ".ag" / "chats"
+CHAT_DIR     = Path.home() / ".ag" / "chats"
 CURRENT_FILE = Path.home() / ".ag" / "current"
+INSN_DIR     = Path.home() / ".ag" / "insn"
+INSN_CURRENT = Path.home() / ".ag" / "insn" / "current"
 DEFAULT_INSTRUCTIONS = ("")
+
+def ensure_insn_dir() -> None:
+    INSN_DIR.mkdir(parents=True, exist_ok=True)
+
+def list_insns() -> list[str]:
+    ensure_insn_dir()
+    return sorted(p.stem for p in INSN_DIR.iterdir() if p.suffix == ".md")
+
+def read_insn(name: str) -> str:
+    path = INSN_DIR / f"{name}.md"
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt '{name}' not found")
+    return path.read_text(encoding="utf-8")
+
+def new_insn(name: str, src_file: str | None = None) -> None:
+    ensure_insn_dir()
+    path = INSN_DIR / f"{name}.md"
+    if path.exists():
+        raise FileExistsError(f"Prompt '{name}' already exists")
+    if src_file:
+        text = Path(src_file).read_text(encoding="utf-8")
+    else:
+        text = ""
+    path.write_text(text, encoding="utf-8")
+
+def delete_insn(name: str) -> None:
+    path = INSN_DIR / f"{name}.md"
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt '{name}' not found")
+    path.unlink()
+
+def set_default_insn(name: str) -> None:
+    ensure_insn_dir()
+    if name not in list_insns():
+        raise FileNotFoundError(f"Prompt '{name}' not found")
+    INSN_CURRENT.write_text(name, encoding="utf-8")
+
+def get_default_insn() -> str | None:
+    try:
+        return INSN_CURRENT.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
 
 def ensure_git_repo() -> None:
     """init git repo"""
